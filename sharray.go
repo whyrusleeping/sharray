@@ -22,7 +22,7 @@ type node struct {
 func Build(ctx context.Context, width int, cids []cid.Cid, cst hamt.CborIpldStore) (cid.Cid, error) {
 	var next []cid.Cid
 
-	for height := 0; len(cids) > 1 && height < 1; height++ {
+	for height := 0; len(cids) > 1 || height < 1; height++ {
 		for i := 0; i < (len(cids)+width-1)/width; i++ {
 			beg := width * i
 			end := width * (i + 1)
