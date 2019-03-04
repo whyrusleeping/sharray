@@ -23,7 +23,8 @@ func Build(ctx context.Context, width int, cids []cid.Cid, cst hamt.CborIpldStor
 	var next []cid.Cid
 
 	for height := 0; len(cids) > 1 || height < 1; height++ {
-		for i := 0; i < (len(cids)+width-1)/width; i++ {
+		numSlices := (len(cids) + width - 1) / width
+		for i := 0; i < numSlices; i++ {
 			beg := width * i
 			end := width * (i + 1)
 			if end > len(cids) {

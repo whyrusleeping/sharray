@@ -4,7 +4,11 @@ A sharded array, on ipld.
 Goals:
 - datastructure for a list of CIDs with minimal overhead
 - efficient merkle proofs
+	- As small as is reasonably possible
+	- Fast to compute
+	- These will be primarily for Filecoin light clients
 - fast
+- ipld native
 
 Non-goals:
 - Easy random insertions
