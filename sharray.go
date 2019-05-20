@@ -2,39 +2,54 @@ package sharray
 
 import (
 	"context"
+	"fmt"
 	"math"
 
 	cid "github.com/ipfs/go-cid"
 	hamt "github.com/ipfs/go-hamt-ipld"
+	cbor "github.com/ipfs/go-ipld-cbor"
 )
 
+func init() {
+	cbor.RegisterCborType(node{})
+
+}
+
+var ErrNotCid = fmt.Errorf("item in intermediate sharray node was not a Cid")
+
 type Sharray struct {
-	node *node
-	cst  hamt.CborIpldStore
+	node  *node
+	cst   *hamt.CborIpldStore
+	width int
 }
 
 type node struct {
 	width  int
 	Height int
-	Cids   []cid.Cid
+	Items  []interface{}
 }
 
-func Build(ctx context.Context, width int, cids []cid.Cid, cst hamt.CborIpldStore) (cid.Cid, error) {
-	var next []cid.Cid
+func Build(ctx context.Context, width int, items []interface{}, cst *hamt.CborIpldStore) (cid.Cid, error) {
+	var next []interface{}
 
-	for height := 0; len(cids) > 1 || height < 1; height++ {
-		numSlices := (len(cids) + width - 1) / width
-		for i := 0; i < numSlices; i++ {
+	if items == nil {
+		items = []interface{}{}
+	}
+
+	for height := 0; len(items) > 1 || height < 1; height++ {
+		numSlices := (len(items) + width - 1) / width
+		// the i == 0 condition allows us to create an 'empty' sharray
+		for i := 0; i < numSlices || i == 0; i++ {
 			beg := width * i
 			end := width * (i + 1)
-			if end > len(cids) {
-				end = len(cids)
+			if end > len(items) {
+				end = len(items)
 			}
 
-			nd := &Node{
+			nd := &node{
 				width:  width,
 				Height: height,
-				Cids:   cids[beg:end],
+				Items:  items[beg:end],
 			}
 
 			c, err := cst.Put(ctx, nd)
@@ -44,24 +59,24 @@ func Build(ctx context.Context, width int, cids []cid.Cid, cst hamt.CborIpldStor
 
 			next = append(next, c)
 		}
-		cids = next
+		items = next
 		next = nil
 	}
 
-	return cids[0], nil
+	return items[0].(cid.Cid), nil
 }
 
-func Load(ctx context.Context, c cid.Cid, width int, cst hamt.CborIpldStore) (*Sharray, error) {
+func Load(ctx context.Context, c cid.Cid, width int, cst *hamt.CborIpldStore) (*Sharray, error) {
 	var nd node
 	if err := cst.Get(ctx, c, &nd); err != nil {
 		return nil, err
 	}
 
 	return &Sharray{
-		node:  *nd,
+		node:  &nd,
 		cst:   cst,
 		width: width,
-	}
+	}, nil
 }
 
 func nodesForHeight(width, height int) int {
@@ -70,12 +85,17 @@ func nodesForHeight(width, height int) int {
 
 func (s *Sharray) Len(ctx context.Context) (int, error) {
 	if s.node.Height == 0 {
-		return len(s.node.Cids), nil
+		return len(s.node.Items), nil
 	}
 
-	countForFullNodes := (len(s.node.Cids) - 1) * nodesForHeight(s.node.Height-1)
+	countForFullNodes := (len(s.node.Items) - 1) * nodesForHeight(s.width, s.node.Height-1)
 
-	last, err := Load(ctx, s.node.Cids[len(s.node.Cids)-1], s.width, s.cst)
+	icid, ok := s.node.Items[len(s.node.Items)-1].(cid.Cid)
+	if !ok {
+		return 0, ErrNotCid
+	}
+
+	last, err := Load(ctx, icid, s.width, s.cst)
 	if err != nil {
 		return 0, err
 	}
@@ -88,12 +108,19 @@ func (s *Sharray) Len(ctx context.Context) (int, error) {
 	return countForFullNodes + lastCount, nil
 }
 
-func (s *Sharray) ForEach(ctx context.Context, f func(cid.Cid)) error {
-	for _, c := range s.node.Cids {
+func (s *Sharray) ForEach(ctx context.Context, f func(interface{}) error) error {
+	for _, c := range s.node.Items {
 		if s.node.Height == 0 {
-			f(c)
+			if err := f(c); err != nil {
+				return err
+			}
 		} else {
-			sub, err := Load(ctx, c, s.width, s.cst)
+			icid, ok := c.(cid.Cid)
+			if !ok {
+				return ErrNotCid
+			}
+
+			sub, err := Load(ctx, icid, s.width, s.cst)
 			if err != nil {
 				return err
 			}
