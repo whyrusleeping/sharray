@@ -42,4 +42,13 @@ func TestSharray(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+
+	val, err := sh.Get(ctx, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if val.(map[string]interface{})["foo"].(uint64) != 6 {
+		t.Fatal("its all wrong")
+	}
 }

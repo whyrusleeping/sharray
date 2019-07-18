@@ -24,7 +24,6 @@ type Sharray struct {
 }
 
 type node struct {
-	width  int
 	Height int
 	Items  []interface{}
 }
@@ -47,7 +46,6 @@ func Build(ctx context.Context, width int, items []interface{}, cst *hamt.CborIp
 			}
 
 			nd := &node{
-				width:  width,
 				Height: height,
 				Items:  items[beg:end],
 			}
@@ -132,4 +130,33 @@ func (s *Sharray) ForEach(ctx context.Context, f func(interface{}) error) error 
 	}
 
 	return nil
+}
+
+var ErrOutOfRange = fmt.Errorf("out of range")
+
+func (s *Sharray) Get(ctx context.Context, i int) (interface{}, error) {
+	if s.node.Height == 0 {
+		if len(s.node.Items) <= i {
+			return nil, ErrOutOfRange
+		}
+		return s.node.Items[i], nil
+	}
+
+	nfh := nodesForHeight(s.width, s.node.Height)
+	subi := i / nfh
+	if subi >= len(s.node.Items) {
+		return nil, ErrOutOfRange
+	}
+
+	icid, ok := s.node.Items[subi].(cid.Cid)
+	if !ok {
+		return nil, ErrNotCid
+	}
+
+	sub, err := Load(ctx, icid, s.width, s.cst)
+	if err != nil {
+		return nil, err
+	}
+
+	return sub.Get(ctx, i%nfh)
 }
